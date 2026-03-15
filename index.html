@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Todo Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=DM+Serif+Display&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body style="margin:0">
+  <div id="root"></div>
+  <script type="text/babel">
+
+// ===== API PERSISTENCE UTILITIES =====
+
+function getUserId() {
+  let id = localStorage.getItem("todo_user_id");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("todo_user_id", id);
+  }
+  return id;
+}
+
+const USER_ID = getUserId();
+
+async function loadState() {
+  try {
+    const res = await fetch("/api/state", {
+      headers: { "x-user-id": USER_ID },
+    });
+    if (!res.ok) throw new Error("Failed to load state");
+    return await res.json();
+  } catch (err) {
+    console.error("loadState error:", err);
+    return { tasks: [], nextId: 1 };
+  }
+}
+
+async function saveState(tasks, nextId) {
+  try {
+    await fetch("/api/state", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": USER_ID,
+      },
+      body: JSON.stringify({ tasks, nextId }),
+    });
+  } catch (err) {
+    console.error("saveState error:", err);
+  }
+}
+
+// ===== CONSTANTS =====
+
+const INITIAL_TASKS = [
+  { id: 1, name: "Put laundry in machine", detail: "90 min wash cycle runs in background", time: 10, priority: "High", deps: "None", done: false, completedAt: null },
+  { id: 2, name: "Make bed", detail: null, time: 5, priority: "Medium", deps: "None", done: false, completedAt: null },
+  { id: 3, name: "Clear desk", detail: null, time: 15, priority: "Medium", deps: "None", done: false, completedAt: null },
+  { id: 4, name: "Vacuum floor of room", detail: null, time: 15, priority: "Medium", deps: "After clearing desk", done: false, completedAt: null },
+  { id: 5, name: "Set meeting time from email", detail: null, time: 5, priority: "High", deps: "None", done: false, completedAt: null },
+  { id: 6, name: "Make interview note sheet", detail: "1 page with summaries of what to say", time: 30, priority: "High", deps: "None", done: false, completedAt: null },
+  { id: 7, name: "Do practice questions (5–10)", detail: null, time: 45, priority: "High", deps: "After note sheet", done: false, completedAt: null },
+  { id: 8, name: "Hang up clothes", detail: null, time: 10, priority: "Medium", deps: "After laundry done", done: false, completedAt: null },
+  { id: 9, name: "Fold n put away clothes", detail: null, time: 15, priority: "Medium", deps: "After laundry done", done: false, completedAt: null },
+  { id: 10, name: "Put clean clothes away", detail: null, time: 10, priority: "Medium", deps: "After folding/hanging", done: false, completedAt: null },
+  { id: 11, name: "Review budget from last month", detail: "Make cuts where needed", time: 30, priority: "Medium", deps: "None", done: false, completedAt: null },
+  { id: 12, name: "Make uncle Jim grandma video collage", detail: null, time: 60, priority: "Low", deps: "None", done: false, completedAt: null },
+  { id: 13, name: "Make uncle Jim Bebe bro video collage", detail: null, time: 60, priority: "Low", deps: "None", done: false, completedAt: null },
+];
+
+const PRIORITY_CONFIG = {
+  High: { bg: "#fee2e2", text: "#dc2626", border: "#fca5a5" },
+  Medium: { bg: "#fff7ed", text: "#ea580c", border: "#fdba74" },
+  Low: { bg: "#eff6ff", text: "#2563eb", border: "#93c5fd" },
+};
+
+const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 };
+
+const sortTasksFn = (taskList) => {
+  const incomplete = taskList.filter((t) => !t.done).sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
+  const completed = taskList.filter((t) => t.done).sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0));
+  return [...incomplete, ...completed];
+};
+
+// ===== SUB-COMPONENTS =====
+
+const Confetti = ({ active }) => {
+  const [particles, setParticles] = React.useState([]);
+  React.useEffect(() => {
+    if (!active) return;
+    const colors = ["#10b981", "#34d399", "#6ee7b7", "#fbbf24", "#f472b6", "#818cf8"];
+    const p = Array.from({ length: 24 }, (_, i) => ({
+      id: i, x: 40 + Math.random() * 20,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      delay: Math.random() * 0.3, drift: (Math.random() - 0.5) * 200,
+      size: 4 + Math.random() * 6,
+    }));
+    setParticles(p);
+    const t = setTimeout(() => setParticles([]), 1200);
+    return () => clearTimeout(t);
+  }, [active]);
+  if (!particles.length) return null;
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 9999 }}>
+      {particles.map((p) => (
+        <div key={p.id} style={{
+          position: "absolute", left: `${p.x}%`, top: "40%", width: p.size, height: p.size,
+          backgroundColor: p.color, borderRadius: Math.random() > 0.5 ? "50%" : "2px",
+          animation: `confettiFall 1s ease-out ${p.delay}s forwards`, opacity: 0,
+        }} />
+      ))}
+    </div>
+  );
+};
+
+const CheckIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+    <path d="M2.5 7.5L5.5 10.5L11.5 3.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const PlusIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+    <path d="M2.5 4h9M5 4V2.5h4V4M3.5 4v7.5a1 1 0 001 1h5a1 1 0 001-1V4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+// ===== MAIN APP =====
+
+function App() {
+  const [tasks, setTasks] = React.useState([]);
+  const [confettiTrigger, setConfettiTrigger] = React.useState(0);
+  const [justCompleted, setJustCompleted] = React.useState(null);
+  const [allDoneCelebration, setAllDoneCelebration] = React.useState(false);
+  const [showAddForm, setShowAddForm] = React.useState(false);
+  const [newTask, setNewTask] = React.useState({ name: "", detail: "", time: 15, priority: "Medium" });
+  const [deletingId, setDeletingId] = React.useState(null);
+  const [nextId, setNextId] = React.useState(14);
+  const [loaded, setLoaded] = React.useState(false);
+
+  // Load state from API on mount
+  React.useEffect(() => {
+    loadState().then((data) => {
+      if (data.tasks && data.tasks.length > 0) {
+        setTasks(sortTasksFn(data.tasks));
+        setNextId(data.nextId || 14);
+      } else {
+        // First visit — seed with default tasks
+        setTasks(INITIAL_TASKS);
+        setNextId(14);
+        saveState(INITIAL_TASKS, 14);
+      }
+      setLoaded(true);
+    });
+  }, []);
+
+  // Helper: update tasks + persist
+  function updateTasks(newTasks, newNextId) {
+    const resolvedNextId = newNextId !== undefined ? newNextId : nextId;
+    const sorted = sortTasksFn(newTasks);
+    setTasks(sorted);
+    if (newNextId !== undefined) setNextId(resolvedNextId);
+    saveState(sorted, resolvedNextId);
+  }
+
+  const completedCount = tasks.filter((t) => t.done).length;
+  const totalTasks = tasks.length;
+  const timeRemaining = tasks.filter((t) => !t.done).reduce((s, t) => s + t.time, 0);
+  const totalTime = tasks.reduce((s, t) => s + t.time, 0);
+  const progress = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
+
+  const toggleTask = (id) => {
+    const updated = tasks.map((t) => {
+      if (t.id !== id) return t;
+      if (!t.done) return { ...t, done: true, completedAt: Date.now() };
+      return { ...t, done: false, completedAt: null };
+    });
+    const task = tasks.find((t) => t.id === id);
+    if (task && !task.done) {
+      setJustCompleted(id);
+      setConfettiTrigger((c) => c + 1);
+      setTimeout(() => setJustCompleted(null), 600);
+      if (updated.filter((t) => t.done).length === updated.length) {
+        setTimeout(() => setAllDoneCelebration(true), 400);
+      }
+    }
+    if (task && task.done) {
+      setAllDoneCelebration(false);
+    }
+    updateTasks(updated);
+  };
+
+  const addTask = () => {
+    if (!newTask.name.trim()) return;
+    const task = {
+      id: nextId, name: newTask.name.trim(),
+      detail: newTask.detail.trim() || null,
+      time: Math.max(1, parseInt(newTask.time) || 15),
+      priority: newTask.priority, deps: "None", done: false, completedAt: null,
+    };
+    updateTasks([...tasks, task], nextId + 1);
+    setNewTask({ name: "", detail: "", time: 15, priority: "Medium" });
+    setShowAddForm(false);
+    setAllDoneCelebration(false);
+  };
+
+  const deleteTask = (id, e) => {
+    e.stopPropagation();
+    setDeletingId(id);
+    setTimeout(() => {
+      updateTasks(tasks.filter((t) => t.id !== id));
+      setDeletingId(null);
+    }, 300);
+  };
+
+  const resetAll = () => {
+    updateTasks(INITIAL_TASKS, 14);
+    setAllDoneCelebration(false);
+  };
+
+  const formatTime = (mins) => {
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m ? `${h}h ${m}m` : `${h}h`;
+  };
+
+  const inputStyle = {
+    width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2e8f0",
+    fontSize: 14, fontFamily: "'DM Sans', sans-serif", outline: "none", background: "#fafbfc",
+    transition: "border-color 0.2s ease", boxSizing: "border-box",
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", fontFamily: "'DM Sans', 'Segoe UI', sans-serif", background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e8f0fe 100%)", padding: "24px 16px" }}>
+      <style>{`
+        @keyframes confettiFall {
+          0% { opacity: 1; transform: translateY(0) rotate(0deg); }
+          100% { opacity: 0; transform: translateY(-180px) rotate(720deg); }
+        }
+        @keyframes checkPop { 0% { transform: scale(0.8); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
+        @keyframes rowGlow { 0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.4); } 50% { box-shadow: 0 0 20px 4px rgba(16,185,129,0.2); } 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideOut { from { opacity: 1; transform: translateX(0) scale(1); } to { opacity: 0; transform: translateX(40px) scale(0.95); } }
+        @keyframes celebrateIn { 0% { opacity: 0; transform: scale(0.8) translateY(20px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes progressPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        @keyframes formSlideIn { from { opacity: 0; max-height: 0; margin-bottom: 0; } to { opacity: 1; max-height: 300px; margin-bottom: 16px; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        input:focus, select:focus { border-color: #10b981 !important; box-shadow: 0 0 0 3px rgba(16,185,129,0.1); }
+      `}</style>
+
+      {!loaded ? (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16 }}>
+          <div style={{ width: 32, height: 32, border: "3px solid #e2e8f0", borderTopColor: "#10b981", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+          <div style={{ color: "#94a3b8", fontSize: 14, fontWeight: 300 }}>Loading your tasks...</div>
+        </div>
+      ) : (
+        <>
+
+      <Confetti active={confettiTrigger} key={confettiTrigger} />
+
+      {/* Header */}
+      <div style={{ maxWidth: 720, margin: "0 auto 20px", animation: "slideUp 0.5s ease-out", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 28, color: "#1e293b", margin: "0 0 4px", letterSpacing: "-0.5px" }}>
+            Sunday To-Do's ☀️
+          </h1>
+          <p style={{ color: "#94a3b8", fontSize: 14, margin: 0, fontWeight: 300 }}>
+            {totalTasks === 0 ? "Add some tasks to get started!" : completedCount === totalTasks ? "All done! You crushed it!" : `${completedCount} of ${totalTasks} complete · ${formatTime(timeRemaining)} remaining`}
+          </p>
+        </div>
+        <button
+          onClick={() => setShowAddForm((v) => !v)}
+          style={{
+            display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 12,
+            border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
+            fontFamily: "'DM Sans', sans-serif",
+            background: showAddForm ? "#fee2e2" : "linear-gradient(135deg, #10b981, #34d399)",
+            color: showAddForm ? "#dc2626" : "white",
+            boxShadow: showAddForm ? "none" : "0 2px 8px rgba(16,185,129,0.3)",
+            transition: "all 0.2s ease",
+            transform: showAddForm ? "rotate(45deg)" : "none",
+          }}
+        >
+          <PlusIcon />
+        </button>
+      </div>
+
+      {/* Add Task Form */}
+      {showAddForm && (
+        <div style={{
+          maxWidth: 720, margin: "0 auto 16px", padding: "20px", borderRadius: 16,
+          background: "white", border: "1.5px solid #d1fae5",
+          boxShadow: "0 4px 20px rgba(16,185,129,0.08)",
+          animation: "formSlideIn 0.3s ease-out",
+        }}>
+          <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4, display: "block" }}>Task name *</label>
+              <input
+                style={inputStyle}
+                placeholder="What do you need to do?"
+                value={newTask.name}
+                onChange={(e) => setNewTask((p) => ({ ...p, name: e.target.value }))}
+                onKeyDown={(e) => e.key === "Enter" && addTask()}
+                autoFocus
+              />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4, display: "block" }}>Detail (optional)</label>
+              <input
+                style={inputStyle}
+                placeholder="Any extra notes..."
+                value={newTask.detail}
+                onChange={(e) => setNewTask((p) => ({ ...p, detail: e.target.value }))}
+                onKeyDown={(e) => e.key === "Enter" && addTask()}
+              />
+            </div>
+            <div style={{ width: 90 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4, display: "block" }}>Mins</label>
+              <input
+                type="number" min="1" style={inputStyle}
+                value={newTask.time}
+                onChange={(e) => setNewTask((p) => ({ ...p, time: e.target.value }))}
+                onKeyDown={(e) => e.key === "Enter" && addTask()}
+              />
+            </div>
+            <div style={{ width: 120 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4, display: "block" }}>Priority</label>
+              <select
+                style={{ ...inputStyle, cursor: "pointer", appearance: "auto" }}
+                value={newTask.priority}
+                onChange={(e) => setNewTask((p) => ({ ...p, priority: e.target.value }))}
+              >
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+          </div>
+          <button
+            onClick={addTask}
+            disabled={!newTask.name.trim()}
+            style={{
+              width: "100%", padding: "11px", borderRadius: 10, border: "none", cursor: newTask.name.trim() ? "pointer" : "not-allowed",
+              fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+              background: newTask.name.trim() ? "linear-gradient(135deg, #10b981, #34d399)" : "#e2e8f0",
+              color: newTask.name.trim() ? "white" : "#94a3b8",
+              boxShadow: newTask.name.trim() ? "0 2px 8px rgba(16,185,129,0.3)" : "none",
+              transition: "all 0.2s ease",
+            }}
+          >
+            Add Task
+          </button>
+        </div>
+      )}
+
+      {/* Progress Bar */}
+      {totalTasks > 0 && (
+        <div style={{ maxWidth: 720, margin: "0 auto 24px", animation: "slideUp 0.6s ease-out" }}>
+          <div style={{ background: "#e2e8f0", borderRadius: 100, height: 10, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", borderRadius: 100, transition: "width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)",
+              width: `${progress}%`,
+              background: progress === 100
+                ? "linear-gradient(90deg, #10b981, #34d399, #6ee7b7, #fbbf24, #f472b6, #818cf8)"
+                : "linear-gradient(90deg, #10b981, #34d399)",
+              animation: progress === 100 ? "progressPulse 1.5s ease-in-out infinite" : "none",
+            }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12, color: "#94a3b8" }}>
+            <span>{Math.round(progress)}% done</span>
+            <span>Total: {formatTime(totalTime)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Stats Cards */}
+      {totalTasks > 0 && (
+        <div style={{ maxWidth: 720, margin: "0 auto 20px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, animation: "slideUp 0.7s ease-out" }}>
+          {[
+            { label: "Time Left", value: formatTime(timeRemaining), color: "#10b981" },
+            { label: "Tasks Left", value: totalTasks - completedCount, color: "#f97316" },
+            { label: "Done", value: completedCount, color: "#8b5cf6" },
+          ].map((s) => (
+            <div key={s.label} style={{
+              background: "white", borderRadius: 14, padding: "14px 16px", textAlign: "center",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)", border: "1px solid #f1f5f9",
+            }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: s.color, fontFamily: "'DM Serif Display', serif" }}>{s.value}</div>
+              <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* All Done Celebration */}
+      {allDoneCelebration && totalTasks > 0 && (
+        <div style={{
+          maxWidth: 720, margin: "0 auto 20px", padding: "24px", borderRadius: 16, textAlign: "center",
+          background: "linear-gradient(135deg, #ecfdf5, #f0fdf4, #fefce8)", border: "2px solid #86efac",
+          animation: "celebrateIn 0.5s ease-out",
+        }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>🎉</div>
+          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, color: "#166534" }}>Everything's done!</div>
+          <div style={{ color: "#4ade80", fontSize: 14, marginTop: 4 }}>You earned that rest. Go enjoy your Sunday.</div>
+        </div>
+      )}
+
+      {/* Task List */}
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
+        {tasks.map((task, i) => {
+          const pc = PRIORITY_CONFIG[task.priority];
+          const isJust = justCompleted === task.id;
+          const isDeleting = deletingId === task.id;
+          return (
+            <div
+              key={task.id}
+              onClick={() => toggleTask(task.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", marginBottom: 8,
+                borderRadius: 14, cursor: "pointer", userSelect: "none",
+                background: task.done ? "linear-gradient(135deg, #ecfdf5, #f0fdf4)" : "white",
+                border: task.done ? "1px solid #bbf7d0" : "1px solid #f1f5f9",
+                boxShadow: task.done ? "none" : "0 1px 3px rgba(0,0,0,0.03)",
+                transition: "all 0.3s ease",
+                animation: isDeleting ? "slideOut 0.3s ease-out forwards" : isJust ? "rowGlow 0.6s ease-out" : `slideUp ${0.3 + i * 0.03}s ease-out`,
+              }}
+            >
+              {/* Checkbox */}
+              <div style={{
+                width: 26, height: 26, borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                background: task.done ? "linear-gradient(135deg, #10b981, #34d399)" : "white",
+                border: task.done ? "none" : "2px solid #d1d5db",
+                transition: "all 0.2s ease",
+                animation: isJust ? "checkPop 0.3s ease-out" : "none",
+                boxShadow: task.done ? "0 2px 8px rgba(16,185,129,0.3)" : "none",
+              }}>
+                {task.done && <CheckIcon />}
+              </div>
+
+              {/* Content */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 14, fontWeight: 500, color: task.done ? "#86efac" : "#334155",
+                  textDecoration: task.done ? "line-through" : "none", transition: "all 0.3s ease",
+                }}>
+                  {task.name}
+                </div>
+                {(task.detail || task.deps !== "None") && (
+                  <div style={{ fontSize: 12, color: task.done ? "#a7f3d0" : "#94a3b8", marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {task.detail && <span>{task.detail}</span>}
+                    {task.deps !== "None" && <span style={{ fontStyle: "italic" }}>⤷ {task.deps}</span>}
+                  </div>
+                )}
+              </div>
+
+              {/* Time */}
+              <div style={{ fontSize: 13, fontWeight: 500, color: task.done ? "#86efac" : "#64748b", flexShrink: 0 }}>
+                {formatTime(task.time)}
+              </div>
+
+              {/* Priority Badge */}
+              <div style={{
+                fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px",
+                padding: "3px 10px", borderRadius: 100, flexShrink: 0,
+                background: task.done ? "#d1fae5" : pc.bg,
+                color: task.done ? "#10b981" : pc.text,
+                border: `1px solid ${task.done ? "#a7f3d0" : pc.border}`,
+                transition: "all 0.3s ease",
+              }}>
+                {task.priority}
+              </div>
+
+              {/* Delete Button */}
+              <div
+                onClick={(e) => deleteTask(task.id, e)}
+                style={{
+                  width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: "flex",
+                  alignItems: "center", justifyContent: "center", cursor: "pointer",
+                  color: "#cbd5e1", transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.background = "#fef2f2"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "#cbd5e1"; e.currentTarget.style.background = "transparent"; }}
+              >
+                <TrashIcon />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer */}
+      {totalTasks > 0 && (
+        <div style={{ maxWidth: 720, margin: "20px auto 0", textAlign: "center" }}>
+          <button
+            onClick={resetAll}
+            style={{
+              background: "none", border: "1px solid #e2e8f0", borderRadius: 10, padding: "8px 20px",
+              color: "#94a3b8", fontSize: 12, cursor: "pointer", fontWeight: 500,
+              fontFamily: "'DM Sans', sans-serif", transition: "all 0.2s ease",
+            }}
+            onMouseEnter={(e) => { e.target.style.borderColor = "#cbd5e1"; e.target.style.color = "#64748b"; }}
+            onMouseLeave={(e) => { e.target.style.borderColor = "#e2e8f0"; e.target.style.color = "#94a3b8"; }}
+          >
+            Reset All
+          </button>
+        </div>
+      )}
+      </>
+      )}
+    </div>
+  );
+}
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
