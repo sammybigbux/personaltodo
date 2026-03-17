@@ -59,19 +59,7 @@ async function saveState(tasks, nextId) {
 // ===== CONSTANTS =====
 
 const INITIAL_TASKS = [
-  { id: 1, name: "Put laundry in machine", detail: "90 min wash cycle runs in background", time: 10, priority: "High", deps: "None", done: false, completedAt: null },
-  { id: 2, name: "Make bed", detail: null, time: 5, priority: "Medium", deps: "None", done: false, completedAt: null },
-  { id: 3, name: "Clear desk", detail: null, time: 15, priority: "Medium", deps: "None", done: false, completedAt: null },
-  { id: 4, name: "Vacuum floor of room", detail: null, time: 15, priority: "Medium", deps: "After clearing desk", done: false, completedAt: null },
-  { id: 5, name: "Set meeting time from email", detail: null, time: 5, priority: "High", deps: "None", done: false, completedAt: null },
-  { id: 6, name: "Make interview note sheet", detail: "1 page with summaries of what to say", time: 30, priority: "High", deps: "None", done: false, completedAt: null },
-  { id: 7, name: "Do practice questions (5–10)", detail: null, time: 45, priority: "High", deps: "After note sheet", done: false, completedAt: null },
-  { id: 8, name: "Hang up clothes", detail: null, time: 10, priority: "Medium", deps: "After laundry done", done: false, completedAt: null },
-  { id: 9, name: "Fold n put away clothes", detail: null, time: 15, priority: "Medium", deps: "After laundry done", done: false, completedAt: null },
-  { id: 10, name: "Put clean clothes away", detail: null, time: 10, priority: "Medium", deps: "After folding/hanging", done: false, completedAt: null },
-  { id: 11, name: "Review budget from last month", detail: "Make cuts where needed", time: 30, priority: "Medium", deps: "None", done: false, completedAt: null },
-  { id: 12, name: "Make uncle Jim grandma video collage", detail: null, time: 60, priority: "Low", deps: "None", done: false, completedAt: null },
-  { id: 13, name: "Make uncle Jim Bebe bro video collage", detail: null, time: 60, priority: "Low", deps: "None", done: false, completedAt: null },
+  { id: 1, name: "Make todo list", detail: "Start right away", minTime: 5, maxTime: 10, priority: "High", deps: "None", done: false, completedAt: null },
 ];
 
 const PRIORITY_CONFIG = {
@@ -145,7 +133,7 @@ function App() {
   const [justCompleted, setJustCompleted] = React.useState(null);
   const [allDoneCelebration, setAllDoneCelebration] = React.useState(false);
   const [showAddForm, setShowAddForm] = React.useState(false);
-  const [newTask, setNewTask] = React.useState({ name: "", detail: "", time: 15, priority: "Medium" });
+  const [newTask, setNewTask] = React.useState({ name: "", detail: "", minTime: 10, maxTime: 20, priority: "Medium" });
   const [deletingId, setDeletingId] = React.useState(null);
   const [nextId, setNextId] = React.useState(14);
   const [loaded, setLoaded] = React.useState(false);
@@ -177,8 +165,10 @@ function App() {
 
   const completedCount = tasks.filter((t) => t.done).length;
   const totalTasks = tasks.length;
-  const timeRemaining = tasks.filter((t) => !t.done).reduce((s, t) => s + t.time, 0);
-  const totalTime = tasks.reduce((s, t) => s + t.time, 0);
+  const timeRemainingMin = tasks.filter((t) => !t.done).reduce((s, t) => s + (t.minTime ?? t.time ?? 0), 0);
+  const timeRemainingMax = tasks.filter((t) => !t.done).reduce((s, t) => s + (t.maxTime ?? t.time ?? 0), 0);
+  const totalTimeMin = tasks.reduce((s, t) => s + (t.minTime ?? t.time ?? 0), 0);
+  const totalTimeMax = tasks.reduce((s, t) => s + (t.maxTime ?? t.time ?? 0), 0);
   const progress = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
 
   const toggleTask = (id) => {
@@ -207,11 +197,12 @@ function App() {
     const task = {
       id: nextId, name: newTask.name.trim(),
       detail: newTask.detail.trim() || null,
-      time: Math.max(1, parseInt(newTask.time) || 15),
+      minTime: Math.max(1, parseInt(newTask.minTime) || 10),
+      maxTime: Math.max(1, parseInt(newTask.maxTime) || 20),
       priority: newTask.priority, deps: "None", done: false, completedAt: null,
     };
     updateTasks([...tasks, task], nextId + 1);
-    setNewTask({ name: "", detail: "", time: 15, priority: "Medium" });
+    setNewTask({ name: "", detail: "", minTime: 10, maxTime: 20, priority: "Medium" });
     setShowAddForm(false);
     setAllDoneCelebration(false);
   };
@@ -236,6 +227,25 @@ function App() {
     const m = mins % 60;
     return m ? `${h}h ${m}m` : `${h}h`;
   };
+
+  const formatTimeRange = (minMins, maxMins) => {
+    if (minMins === maxMins) return formatTime(minMins);
+    return `${formatTime(minMins)}\u2013${formatTime(maxMins)}`;
+  };
+
+  const fmtClock = (date) => {
+    const h = date.getHours() % 12 || 12;
+    const m = String(date.getMinutes()).padStart(2, '0');
+    return `${h}:${m}${date.getHours() >= 12 ? 'pm' : 'am'}`;
+  };
+
+  const finishRange = (() => {
+    if (timeRemainingMin === 0 && timeRemainingMax === 0) return null;
+    const now = new Date();
+    const a = fmtClock(new Date(now.getTime() + timeRemainingMin * 60000));
+    const b = fmtClock(new Date(now.getTime() + timeRemainingMax * 60000));
+    return timeRemainingMin === timeRemainingMax ? `Finish at ${a}` : `Finish at ${a}\u2013${b}`;
+  })();
 
   const inputStyle = {
     width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2e8f0",
@@ -278,8 +288,11 @@ function App() {
             Sunday To-Do's ☀️
           </h1>
           <p style={{ color: "#94a3b8", fontSize: 14, margin: 0, fontWeight: 300 }}>
-            {totalTasks === 0 ? "Add some tasks to get started!" : completedCount === totalTasks ? "All done! You crushed it!" : `${completedCount} of ${totalTasks} complete · ${formatTime(timeRemaining)} remaining`}
+            {totalTasks === 0 ? "Add some tasks to get started!" : completedCount === totalTasks ? "All done! You crushed it!" : `${completedCount} of ${totalTasks} complete \u00b7 ${formatTimeRange(timeRemainingMin, timeRemainingMax)} remaining`}
           </p>
+          {finishRange && completedCount < totalTasks && (
+            <p style={{ color: "#10b981", fontSize: 13, margin: "2px 0 0", fontWeight: 500 }}>{finishRange}</p>
+          )}
         </div>
         <button
           onClick={() => setShowAddForm((v) => !v)}
@@ -330,12 +343,21 @@ function App() {
                 onKeyDown={(e) => e.key === "Enter" && addTask()}
               />
             </div>
-            <div style={{ width: 90 }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4, display: "block" }}>Mins</label>
+            <div style={{ width: 80 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4, display: "block" }}>Min</label>
               <input
                 type="number" min="1" style={inputStyle}
-                value={newTask.time}
-                onChange={(e) => setNewTask((p) => ({ ...p, time: e.target.value }))}
+                value={newTask.minTime}
+                onChange={(e) => setNewTask((p) => ({ ...p, minTime: e.target.value }))}
+                onKeyDown={(e) => e.key === "Enter" && addTask()}
+              />
+            </div>
+            <div style={{ width: 80 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4, display: "block" }}>Max</label>
+              <input
+                type="number" min="1" style={inputStyle}
+                value={newTask.maxTime}
+                onChange={(e) => setNewTask((p) => ({ ...p, maxTime: e.target.value }))}
                 onKeyDown={(e) => e.key === "Enter" && addTask()}
               />
             </div>
@@ -384,7 +406,7 @@ function App() {
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12, color: "#94a3b8" }}>
             <span>{Math.round(progress)}% done</span>
-            <span>Total: {formatTime(totalTime)}</span>
+            <span>Total: {formatTimeRange(totalTimeMin, totalTimeMax)}</span>
           </div>
         </div>
       )}
@@ -393,7 +415,7 @@ function App() {
       {totalTasks > 0 && (
         <div style={{ maxWidth: 720, margin: "0 auto 20px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, animation: "slideUp 0.7s ease-out" }}>
           {[
-            { label: "Time Left", value: formatTime(timeRemaining), color: "#10b981" },
+            { label: "Time Left", value: formatTimeRange(timeRemainingMin, timeRemainingMax), color: "#10b981" },
             { label: "Tasks Left", value: totalTasks - completedCount, color: "#f97316" },
             { label: "Done", value: completedCount, color: "#8b5cf6" },
           ].map((s) => (
@@ -471,7 +493,7 @@ function App() {
 
               {/* Time */}
               <div style={{ fontSize: 13, fontWeight: 500, color: task.done ? "#86efac" : "#64748b", flexShrink: 0 }}>
-                {formatTime(task.time)}
+                {formatTimeRange(task.minTime ?? task.time, task.maxTime ?? task.time)}
               </div>
 
               {/* Priority Badge */}
