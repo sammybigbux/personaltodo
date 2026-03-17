@@ -169,7 +169,8 @@ function App() {
   const timeRemainingMax = tasks.filter((t) => !t.done).reduce((s, t) => s + (t.maxTime ?? t.time ?? 0), 0);
   const totalTimeMin = tasks.reduce((s, t) => s + (t.minTime ?? t.time ?? 0), 0);
   const totalTimeMax = tasks.reduce((s, t) => s + (t.maxTime ?? t.time ?? 0), 0);
-  const progress = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
+  const completedTimeMin = tasks.filter((t) => t.done).reduce((s, t) => s + (t.minTime ?? t.time ?? 0), 0);
+  const progress = totalTimeMin > 0 ? (completedTimeMin / totalTimeMin) * 100 : 0;
 
   const toggleTask = (id) => {
     const updated = tasks.map((t) => {
