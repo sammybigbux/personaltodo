@@ -133,7 +133,7 @@ function App() {
   const [justCompleted, setJustCompleted] = React.useState(null);
   const [allDoneCelebration, setAllDoneCelebration] = React.useState(false);
   const [showAddForm, setShowAddForm] = React.useState(false);
-  const [newTask, setNewTask] = React.useState({ name: "", detail: "", minTime: 10, maxTime: 20, priority: "Medium" });
+  const [newTask, setNewTask] = React.useState({ name: "", detail: "", minTime: 10, maxTime: 20, priority: "Medium", deps: "None" });
   const [deletingId, setDeletingId] = React.useState(null);
   const [nextId, setNextId] = React.useState(14);
   const [loaded, setLoaded] = React.useState(false);
@@ -199,10 +199,10 @@ function App() {
       detail: newTask.detail.trim() || null,
       minTime: Math.max(1, parseInt(newTask.minTime) || 10),
       maxTime: Math.max(1, parseInt(newTask.maxTime) || 20),
-      priority: newTask.priority, deps: "None", done: false, completedAt: null,
+      priority: newTask.priority, deps: newTask.deps || "None", done: false, completedAt: null,
     };
     updateTasks([...tasks, task], nextId + 1);
-    setNewTask({ name: "", detail: "", minTime: 10, maxTime: 20, priority: "Medium" });
+    setNewTask({ name: "", detail: "", minTime: 10, maxTime: 20, priority: "Medium", deps: "None" });
     setShowAddForm(false);
     setAllDoneCelebration(false);
   };
@@ -374,6 +374,23 @@ function App() {
               </select>
             </div>
           </div>
+          {tasks.filter((t) => !t.done).length > 0 && (
+            <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4, display: "block" }}>Depends on</label>
+                <select
+                  style={{ ...inputStyle, cursor: "pointer", appearance: "auto" }}
+                  value={newTask.deps}
+                  onChange={(e) => setNewTask((p) => ({ ...p, deps: e.target.value }))}
+                >
+                  <option value="None">None</option>
+                  {tasks.filter((t) => !t.done).map((t) => (
+                    <option key={t.id} value={t.name}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
           <button
             onClick={addTask}
             disabled={!newTask.name.trim()}
